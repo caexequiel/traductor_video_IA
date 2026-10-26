@@ -1,0 +1,30 @@
+# Entorno virtual Python (librerías pesadas PyTorch/CUDA)
+.venv/
+venv/
+env/
+
+# Caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Carpetas de procesamiento temporal y videos generados
+temp/
+output/
+*.mp4
+*.mkv
+*.wav
+*.mp3
+
+# Modelos y pesos pesados
+*.pth
+*.bin
+*.safetensors
+*.onnx
+
+# IDE y configuración local
+.vscode/
+.idea/
+*.swp
+.DS_Store

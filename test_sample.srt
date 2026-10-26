@@ -1,0 +1,7 @@
+1
+00:00:00,500 --> 00:00:02,200
+Hello, welcome to this video.
+
+2
+00:00:02,500 --> 00:00:04,500
+We are testing artificial intelligence voice cloning.

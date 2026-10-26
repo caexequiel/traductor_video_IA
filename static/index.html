@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traductor Inteligente de Video - Clonación de Voz y Doblaje Local</title>
+  <link rel="icon" type="image/png" href="/static/icon.png">
+  <link rel="apple-touch-icon" href="/static/icon.png">
+  <meta name="application-name" content="Traductor Inteligente de Video">
+  <meta name="theme-color" content="#0b0f19">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <img src="/static/icon.png" alt="Logo" class="logo-img">
+        <div>
+          <h1 class="logo-title">Traductor Inteligente de Video</h1>
+          <p class="logo-subtitle">Doblaje local con clonación de voz y sincronización precisa (Castellano)</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="gpu-badge" id="gpuBadge">
+          <span class="status-indicator"></span>
+          <span id="gpuText">Detectando GPU...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="main-content">
+      <!-- Left Column: Source & Configuration -->
+      <section class="panel config-panel">
+        <h2 class="panel-title"><span class="step-num">1</span> Selección del Video</h2>
+        
+        <div class="file-selection-box">
+          <div class="selected-file-info" id="selectedFileInfo">
+            <div class="placeholder-text">Ningún video seleccionado todavía.</div>
+          </div>
+          <button class="btn btn-primary" id="btnOpenExplorer">
+            📂 Abrir Explorador de Archivos
+          </button>
+        </div>
+
+        <!-- Video Preview -->
+        <div class="preview-card hidden" id="videoPreviewCard">
+          <h3 class="card-subtitle">Vista Previa Original</h3>
+          <video id="origVideoPlayer" controls class="video-player"></video>
+        </div>
+
+        <h2 class="panel-title mt-4"><span class="step-num">2</span> Subtítulos y Configuración</h2>
+        <div class="config-group">
+          <label class="label-heading">Fuente de Diálogos:</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="subMode" value="whisper" checked id="radioWhisper">
+              Auto-transcribir con IA (Faster-Whisper)
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="subMode" value="file" id="radioFile">
+              Cargar archivo de subtítulos (.srt / .vtt)
+            </label>
+          </div>
+
+          <div id="subFileSection" class="sub-file-box hidden">
+            <div id="selectedSubInfo" class="selected-sub-text">Sin subtítulo seleccionado</div>
+            <button class="btn btn-secondary btn-sm" id="btnSelectSub">
+              📄 Explorar Subtítulo
+            </button>
+          </div>
+        </div>
+
+        <div class="config-group mt-3">
+          <label class="label-heading">Modelo Faster-Whisper:</label>
+          <select id="whisperModelSelect" class="form-select">
+            <option value="small">Small (Rápido, menor VRAM)</option>
+            <option value="medium" selected>Medium (Recomendado - Óptimo para RTX 3050)</option>
+            <option value="large-v3">Large-v3 (Máxima precisión)</option>
+          </select>
+        </div>
+
+        <div class="config-group mt-3">
+          <label class="toggle-container">
+            <input type="checkbox" id="checkPreserveBg" checked>
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Preservar música y efectos de fondo originales</span>
+          </label>
+          <p class="help-text">Separa la voz de la banda sonora para que las explosiones, ambiente y música se conserven intactos en el video doblado.</p>
+        </div>
+
+        <button class="btn btn-accent btn-large mt-4" id="btnStartDubbing" disabled>
+          ✨ Iniciar Doblaje y Clonación
+        </button>
+      </section>
+
+      <!-- Right Column: Process & Results -->
+      <section class="panel process-panel">
+        <h2 class="panel-title"><span class="step-num">3</span> Flujo de Procesamiento en Tiempo Real</h2>
+
+        <!-- Pipeline Steps Tracker -->
+        <div class="pipeline-stepper" id="pipelineStepper">
+          <div class="step-item" id="step-extract">
+            <div class="step-circle">1</div>
+            <div class="step-label">Extracción</div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="step-item" id="step-separation">
+            <div class="step-circle">2</div>
+            <div class="step-label">Separación</div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="step-item" id="step-transcription">
+            <div class="step-circle">3</div>
+            <div class="step-label">Transcripción</div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="step-item" id="step-translation">
+            <div class="step-circle">4</div>
+            <div class="step-label">Traducción</div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="step-item" id="step-voice_cloning">
+            <div class="step-circle">5</div>
+            <div class="step-label">Clonación</div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="step-item" id="step-synchronization">
+            <div class="step-circle">6</div>
+            <div class="step-label">Sincronización</div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="step-item" id="step-muxing">
+            <div class="step-circle">7</div>
+            <div class="step-label">Render</div>
+          </div>
+        </div>
+
+        <!-- Progress bar & status log -->
+        <div class="progress-box mt-3">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progressBarFill" style="width: 0%"></div>
+          </div>
+          <div class="progress-info">
+            <span id="progressMessage">Esperando selección de video...</span>
+            <span id="progressPercentage">0%</span>
+          </div>
+        </div>
+
+        <!-- Segments Preview Table -->
+        <div class="segments-section mt-4">
+          <div class="section-header-row">
+            <h3 class="card-subtitle">Segmentos de Diálogo y Traducción al Castellano</h3>
+            <span class="badge" id="segmentCountBadge">0 frases</span>
+          </div>
+          <div class="table-container">
+            <table class="segments-table" id="segmentsTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Tiempo</th>
+                  <th>Original</th>
+                  <th>Castellano (Doblaje)</th>
+                </tr>
+              </thead>
+              <tbody id="segmentsTbody">
+                <tr>
+                  <td colspan="4" class="text-center text-muted">Aún no se han procesado diálogos.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Final Result Video Player -->
+        <div class="result-card hidden mt-4" id="resultCard">
+          <div class="result-header">
+            <h3>🎉 ¡Video Doblado Listo!</h3>
+            <a id="btnDownload" class="btn btn-primary btn-sm" download>⬇️ Descargar Video</a>
+          </div>
+          <video id="dubbedVideoPlayer" controls class="video-player"></video>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- File Explorer Modal -->
+  <div class="modal-backdrop hidden" id="explorerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Explorador de Archivos Local</h3>
+        <button class="modal-close" id="btnCloseModal">&times;</button>
+      </div>
+
+      <!-- Quick Bookmarks -->
+      <div class="bookmarks-bar" id="bookmarksBar">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Breadcrumbs Path Bar -->
+      <div class="path-bar">
+        <button class="btn btn-secondary btn-sm" id="btnGoParent" title="Subir nivel">⬆️ Subir</button>
+        <div class="path-display" id="pathDisplay">/home/exequiel</div>
+      </div>
+
+      <!-- File List -->
+      <div class="explorer-list-container">
+        <table class="explorer-table">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Tipo</th>
+              <th>Tamaño</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="explorerTbody">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="modal-footer">
+        <span class="text-muted" id="explorerHint">Selecciona un archivo compatible.</span>
+        <button class="btn btn-secondary" id="btnCancelExplorer">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
