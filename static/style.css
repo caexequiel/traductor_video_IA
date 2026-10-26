@@ -215,6 +215,13 @@ body {
   gap: 12px;
 }
 
+.explorer-btn-group {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+
 .selected-file-info {
   font-size: 14px;
   color: var(--text-main);

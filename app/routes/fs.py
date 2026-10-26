@@ -105,3 +105,105 @@ def inspect_file(path: str = Query(...)):
             return {"type": "video", "error": str(e)}
 
     return {"type": "file", "name": p.name, "size": p.stat().st_size}
+
+
+@router.post("/native-picker")
+def open_native_picker(type: str = Query("video")):
+    """Abre el diálogo nativo de selección de archivos del sistema operativo (CachyOS / GNOME)."""
+    import subprocess
+    home = str(Path.home())
+    default_dir = str(Path.home() / "Vídeos") if (Path.home() / "Vídeos").exists() else home
+
+    env = os.environ.copy()
+    if "WAYLAND_DISPLAY" not in env:
+        env["WAYLAND_DISPLAY"] = "wayland-0"
+    if "DISPLAY" not in env:
+        env["DISPLAY"] = ":1"
+
+    # 1. Intentar con Zenity (GTK4/Adwaita nativo de GNOME en CachyOS)
+    if shutil_which("zenity"):
+        if type == "video":
+            title = "Seleccionar Archivo de Video"
+            filters = [
+                "--file-filter=Archivos de Video (*.mp4, *.mkv, *.avi, *.mov, *.webm) | *.mp4 *.mkv *.avi *.mov *.webm *.flv *.ts *.m4v *.MP4 *.MKV",
+                "--file-filter=Todos los archivos | *"
+            ]
+            start_path = f"{default_dir}/"
+        else:
+            title = "Seleccionar Archivo de Subtítulos"
+            filters = [
+                "--file-filter=Archivos de Subtítulos (*.srt, *.vtt) | *.srt *.vtt *.SRT *.VTT",
+                "--file-filter=Todos los archivos | *"
+            ]
+            start_path = f"{home}/"
+
+        cmd = [
+            "zenity",
+            "--file-selection",
+            f"--title={title}",
+            f"--filename={start_path}"
+        ] + filters
+
+        try:
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            if proc.returncode == 0:
+                selected = proc.stdout.strip()
+                if selected and Path(selected).exists():
+                    p = Path(selected)
+                    size = p.stat().st_size
+                    info = None
+                    if type == "video":
+                        try:
+                            info = AudioExtractor.get_media_info(str(p))
+                        except Exception:
+                            pass
+                    return {
+                        "status": "selected",
+                        "path": str(p),
+                        "filename": p.name,
+                        "size": size,
+                        "info": info
+                    }
+            elif proc.returncode == 1:
+                return {"status": "cancelled"}
+        except Exception:
+            pass
+
+    # 2. Fallback con Tkinter
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        if type == "video":
+            filetypes = [
+                ("Archivos de Video", "*.mp4 *.mkv *.avi *.mov *.webm *.flv *.ts"),
+                ("Todos los archivos", "*.*")
+            ]
+            selected = filedialog.askopenfilename(initialdir=default_dir, title="Seleccionar Video", filetypes=filetypes)
+        else:
+            filetypes = [
+                ("Archivos de Subtítulos", "*.srt *.vtt"),
+                ("Todos los archivos", "*.*")
+            ]
+            selected = filedialog.askopenfilename(initialdir=home, title="Seleccionar Subtítulo", filetypes=filetypes)
+        root.destroy()
+
+        if selected and Path(selected).exists():
+            p = Path(selected)
+            return {
+                "status": "selected",
+                "path": str(p),
+                "filename": p.name,
+                "size": p.stat().st_size
+            }
+        return {"status": "cancelled"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def shutil_which(pgm):
+    import shutil
+    return shutil.which(pgm)
+

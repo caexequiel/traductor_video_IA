@@ -15,6 +15,7 @@ const dom = {
   gpuText: document.getElementById('gpuText'),
   selectedFileInfo: document.getElementById('selectedFileInfo'),
   btnOpenExplorer: document.getElementById('btnOpenExplorer'),
+  btnOpenWebExplorer: document.getElementById('btnOpenWebExplorer'),
   videoPreviewCard: document.getElementById('videoPreviewCard'),
   origVideoPlayer: document.getElementById('origVideoPlayer'),
   radioWhisper: document.getElementById('radioWhisper'),
@@ -55,8 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Eventos de interfaz
 function initEvents() {
-  dom.btnOpenExplorer.addEventListener('click', () => openExplorer('video'));
-  dom.btnSelectSub.addEventListener('click', () => openExplorer('subtitle'));
+  dom.btnOpenExplorer.addEventListener('click', () => openNativeOrWebExplorer('video'));
+  if (dom.btnOpenWebExplorer) {
+    dom.btnOpenWebExplorer.addEventListener('click', () => openWebExplorer('video'));
+  }
+  dom.btnSelectSub.addEventListener('click', () => openNativeOrWebExplorer('subtitle'));
   dom.btnCloseModal.addEventListener('click', closeExplorer);
   dom.btnCancelExplorer.addEventListener('click', closeExplorer);
 
@@ -123,14 +127,54 @@ async function initGPUStatus() {
   setInterval(update, 4000);
 }
 
-// Explorador de Archivos
-function openExplorer(targetType) {
+// Explorador de Archivos Nativo de CachyOS / Web
+async function openNativeOrWebExplorer(targetType) {
+  state.currentExplorerTarget = targetType;
+  
+  // Cambiar texto de botón temporalmente para dar feedback visual
+  const activeBtn = targetType === 'video' ? dom.btnOpenExplorer : dom.btnSelectSub;
+  const originalText = activeBtn.innerText;
+  activeBtn.innerText = "⏳ Abriendo CachyOS...";
+  activeBtn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/fs/native-picker?type=${targetType}`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'selected') {
+        onFileSelected({
+          path: data.path,
+          name: data.filename,
+          size: data.size
+        });
+        activeBtn.innerText = originalText;
+        activeBtn.disabled = false;
+        return;
+      } else if (data.status === 'cancelled') {
+        // Cancelado por el usuario en el diálogo
+        activeBtn.innerText = originalText;
+        activeBtn.disabled = false;
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("Explorador nativo no disponible, abriendo explorador web:", err);
+  } finally {
+    activeBtn.innerText = originalText;
+    activeBtn.disabled = false;
+  }
+
+  // Fallback al explorador web
+  openWebExplorer(targetType);
+}
+
+function openWebExplorer(targetType) {
   state.currentExplorerTarget = targetType;
   if (targetType === 'video') {
-    dom.modalTitle.innerText = "Seleccionar Archivo de Video";
+    dom.modalTitle.innerText = "Seleccionar Archivo de Video (Web)";
     dom.explorerHint.innerText = "Formatos soportados: MP4, MKV, AVI, MOV, WEBM, FLV";
   } else {
-    dom.modalTitle.innerText = "Seleccionar Archivo de Subtítulos";
+    dom.modalTitle.innerText = "Seleccionar Archivo de Subtítulos (Web)";
     dom.explorerHint.innerText = "Formatos soportados: SRT, VTT";
   }
   dom.explorerModal.classList.remove('hidden');
