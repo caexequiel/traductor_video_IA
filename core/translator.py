@@ -97,6 +97,11 @@ class TextTranslator:
         self.dialect = dialect
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
+    @staticmethod
+    def to_latin_american_spanish(text: str) -> str:
+        """Adapta el texto a español latino neutro."""
+        return to_latin_american_spanish(text)
+
     def translate_segments(
         self,
         segments: List[Dict[str, Any]],
