@@ -60,7 +60,7 @@ class WhisperTranscriber:
         audio_path: str,
         language: Optional[str] = None,
         progress_cb: Optional[Callable[[float, str], None]] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], str]:
         from faster_whisper import WhisperModel
 
         if progress_cb:
@@ -113,4 +113,4 @@ class WhisperTranscriber:
         if progress_cb:
             progress_cb(1.0, f"Transcripción completada ({len(results)} segmentos). Idioma detectado: {info.language}")
 
-        return results
+        return results, getattr(info, "language", "en") or "en"

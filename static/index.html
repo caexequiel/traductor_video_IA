@@ -81,6 +81,27 @@
         </div>
 
         <div class="config-group mt-3">
+          <label class="label-heading">Idioma de Origen del Audio:</label>
+          <select id="sourceLangSelect" class="form-select">
+            <option value="auto" selected>✨ Auto-detectar (Japonés, Inglés, etc.)</option>
+            <option value="ja">🇯🇵 Japonés (日本語)</option>
+            <option value="en">🇺🇸 Inglés (English)</option>
+            <option value="fr">🇫🇷 Francés (Français)</option>
+            <option value="de">🇩🇪 Alemán (Deutsch)</option>
+            <option value="it">🇮🇹 Italiano</option>
+            <option value="pt">🇧🇷 Portugués</option>
+          </select>
+        </div>
+
+        <div class="config-group mt-3">
+          <label class="label-heading">Variante de Español para el Doblaje:</label>
+          <select id="dialectSelect" class="form-select">
+            <option value="es-latam" selected>🌎 Español Latinoamericano (Neutro)</option>
+            <option value="es-es">🇪🇸 Español Castellano (España)</option>
+          </select>
+        </div>
+
+        <div class="config-group mt-3">
           <label class="label-heading">Modelo Faster-Whisper:</label>
           <select id="whisperModelSelect" class="form-select">
             <option value="small">Small (Rápido, menor VRAM)</option>

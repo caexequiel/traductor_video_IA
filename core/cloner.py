@@ -71,6 +71,50 @@ class VoiceCloner:
         sf.write(sample_out_path, clip, sr)
         return sample_out_path
 
+    def _synthesize_safe(self, tts, text: str, speaker_wav_path: str, lang: str, out_wav: Path) -> bool:
+        clean_text = " ".join(text.split()).strip()
+        if not clean_text:
+            return False
+
+        if len(clean_text) <= 200:
+            tts.tts_to_file(text=clean_text, speaker_wav=speaker_wav_path, language=lang, file_path=str(out_wav))
+            return True
+
+        # Dividir textos extensos en frases de máximo 150 caracteres
+        import re
+        parts = [p.strip() for p in re.split(r'(?<=[.,;!?])\s+', clean_text) if p.strip()]
+        grouped = []
+        curr = ""
+        for p in parts:
+            if len(curr) + len(p) < 150:
+                curr = f"{curr} {p}".strip()
+            else:
+                if curr:
+                    grouped.append(curr)
+                curr = p
+        if curr:
+            grouped.append(curr)
+
+        audio_chunks = []
+        sr_target = 24000
+        for i, chunk_txt in enumerate(grouped):
+            temp_sub = out_wav.parent / f"chunk_{out_wav.stem}_{i}.wav"
+            try:
+                tts.tts_to_file(text=chunk_txt, speaker_wav=speaker_wav_path, language=lang, file_path=str(temp_sub))
+                if temp_sub.exists():
+                    d, sr_target = sf.read(str(temp_sub))
+                    audio_chunks.append(d)
+                    temp_sub.unlink(missing_ok=True)
+            except Exception as ex:
+                print(f"[Error en subfragmento]: {ex}")
+
+        if audio_chunks:
+            combined = np.concatenate(audio_chunks)
+            sf.write(str(out_wav), combined, sr_target)
+            return True
+
+        return False
+
     def clone_segments(
         self,
         segments: List[Dict[str, Any]],
@@ -87,7 +131,6 @@ class VoiceCloner:
 
         from TTS.api import TTS
 
-        # Iniciar XTTS-v2 en GPU (FP16 para no saturar 6GB VRAM)
         tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=(self.device == "cuda"))
 
         total = len(segments)
@@ -99,13 +142,17 @@ class VoiceCloner:
             seg_out_wav = self.output_dir / f"cloned_seg_{seg['id']:04d}.wav"
             
             try:
-                tts.tts_to_file(
+                success = self._synthesize_safe(
+                    tts=tts,
                     text=text,
-                    speaker_wav=speaker_wav_path,
-                    language=target_language,
-                    file_path=str(seg_out_wav)
+                    speaker_wav_path=speaker_wav_path,
+                    lang=target_language,
+                    out_wav=seg_out_wav
                 )
-                seg["cloned_audio_path"] = str(seg_out_wav)
+                if success and seg_out_wav.exists():
+                    seg["cloned_audio_path"] = str(seg_out_wav)
+                else:
+                    seg["cloned_audio_path"] = None
             except Exception as e:
                 print(f"[Error en síntesis del segmento {seg['id']}]: {e}")
                 seg["cloned_audio_path"] = None

@@ -17,6 +17,7 @@ class ProcessRequest(BaseModel):
     whisper_model: str = "medium"
     preserve_bg: bool = True
     source_language: Optional[str] = None
+    dialect: str = "es-latam"
 
 @router.get("/system/gpu")
 def get_gpu_status():
@@ -85,6 +86,7 @@ def run_pipeline_thread(req_dict: Dict[str, Any], job_id: str):
             whisper_model=req_dict.get("whisper_model", "medium"),
             preserve_bg=req_dict.get("preserve_bg", True),
             source_language=req_dict.get("source_language"),
+            dialect=req_dict.get("dialect", "es-latam"),
             progress_cb=progress_callback
         )
         app_state.jobs[job_id]["status"] = "completed"

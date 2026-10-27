@@ -23,6 +23,8 @@ const dom = {
   subFileSection: document.getElementById('subFileSection'),
   selectedSubInfo: document.getElementById('selectedSubInfo'),
   btnSelectSub: document.getElementById('btnSelectSub'),
+  sourceLangSelect: document.getElementById('sourceLangSelect'),
+  dialectSelect: document.getElementById('dialectSelect'),
   whisperModelSelect: document.getElementById('whisperModelSelect'),
   checkPreserveBg: document.getElementById('checkPreserveBg'),
   btnStartDubbing: document.getElementById('btnStartDubbing'),
@@ -304,9 +306,16 @@ async function startDubbingProcess() {
   dom.resultCard.classList.add('hidden');
   resetStepper();
 
+  const sourceLang = dom.sourceLangSelect && dom.sourceLangSelect.value !== 'auto'
+    ? dom.sourceLangSelect.value
+    : null;
+  const dialect = dom.dialectSelect ? dom.dialectSelect.value : 'es-latam';
+
   const payload = {
     video_path: state.selectedVideoPath,
     subtitle_path: state.subMode === 'file' ? state.selectedSubPath : null,
+    source_language: sourceLang,
+    dialect: dialect,
     whisper_model: dom.whisperModelSelect.value,
     preserve_bg: dom.checkPreserveBg.checked
   };

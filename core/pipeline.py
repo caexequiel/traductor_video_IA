@@ -30,6 +30,7 @@ class DubbingPipeline:
         whisper_model: str = "medium",
         preserve_bg: bool = True,
         source_language: Optional[str] = None,
+        dialect: str = "es-latam",
         progress_cb: Optional[Callable[[str, float, str, Dict[str, Any]], None]] = None
     ) -> Dict[str, Any]:
         """
@@ -70,6 +71,7 @@ class DubbingPipeline:
             # 3. Transcripción / Subtítulos
             emit("transcription", 0.05, "Obteniendo marcas de tiempo y diálogos...")
             segments = []
+            detected_lang = source_language
             if subtitle_path and Path(subtitle_path).exists():
                 emit("transcription", 0.5, f"Leyendo subtítulos proporcionados: {Path(subtitle_path).name}...")
                 segments = SubtitleParser.parse_file(subtitle_path)
@@ -77,7 +79,7 @@ class DubbingPipeline:
             else:
                 emit("transcription", 0.1, f"Transcribiendo con faster-whisper ({whisper_model})...")
                 transcriber = WhisperTranscriber(model_size=whisper_model)
-                segments = transcriber.transcribe(
+                segments, detected_lang = transcriber.transcribe(
                     vocals_wav,
                     language=source_language,
                     progress_cb=lambda p, m: emit("transcription", p, m)
@@ -86,17 +88,19 @@ class DubbingPipeline:
             if not segments:
                 raise ValueError("No se encontraron diálogos ni frases para doblar en el video.")
 
-            emit("transcription", 1.0, f"Transcripción lista ({len(segments)} segmentos encontrados).", {"segments": segments})
+            effective_source = source_language or detected_lang or "en"
+            emit("transcription", 1.0, f"Transcripción lista ({len(segments)} segmentos). Idioma detectado: {effective_source.upper()}", {"segments": segments, "language": effective_source})
 
-            # 4. Traducción al castellano
-            emit("translation", 0.1, "Traduciendo frases al castellano...")
-            translator = TextTranslator(target_lang="es")
+            # 4. Traducción al español (Latino o Castellano)
+            dialect_label = "Español Latino" if "latam" in dialect else "Castellano"
+            emit("translation", 0.1, f"Traduciendo frases ({effective_source.upper()} -> {dialect_label})...")
+            translator = TextTranslator(target_lang="es", dialect=dialect)
             segments = translator.translate_segments(
                 segments,
-                source_lang=source_language or "en",
+                source_lang=effective_source,
                 progress_cb=lambda p, m: emit("translation", p, m)
             )
-            emit("translation", 1.0, "Traducción completada con éxito.", {"segments": segments})
+            emit("translation", 1.0, f"Traducción a {dialect_label} completada con éxito.", {"segments": segments})
 
             # 5. Extracción de muestra de voz del interlocutor original
             emit("voice_cloning", 0.05, "Extrayendo muestra del timbre de voz original...")
