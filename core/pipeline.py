@@ -1,5 +1,6 @@
 import os
 import gc
+import re
 import uuid
 import time
 from pathlib import Path
