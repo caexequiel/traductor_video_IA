@@ -87,10 +87,34 @@ class DubbingPipeline:
                 except Exception as ex:
                     print(f"[Aviso] No se pudo extraer pista embebida #{embedded_sub_index}: {ex}")
 
-            if subtitle_path and Path(subtitle_path).exists():
+            is_already_spanish = False
+
+            if subtitle_path == "hardcoded_ocr":
+                emit("transcription", 0.1, f"Detectando momentos de habla con faster-whisper ({whisper_model})...")
+                transcriber = WhisperTranscriber(model_size=whisper_model)
+                segments, detected_lang = transcriber.transcribe(
+                    vocals_wav,
+                    language=source_language,
+                    progress_cb=lambda p, m: emit("transcription", p * 0.7, m)
+                )
+                emit("transcription", 0.75, "Leyendo subtítulos directamente de la pantalla del video (OCR)...")
+                from core.ocr_subtitles import VideoSubtitleOCR
+                segments = VideoSubtitleOCR.extract_subtitles_for_segments(
+                    video_path,
+                    segments,
+                    dialect=dialect,
+                    progress_cb=lambda p, m: emit("transcription", 0.75 + 0.25 * p, m)
+                )
+                is_already_spanish = True
+                effective_source = "es"
+            elif subtitle_path and Path(subtitle_path).exists():
                 emit("transcription", 0.5, f"Leyendo subtítulos: {Path(subtitle_path).name}...")
                 segments = SubtitleParser.parse_file(subtitle_path)
                 emit("transcription", 1.0, f"{len(segments)} frases cargadas desde subtítulos.")
+                sample_words = set(re.findall(r'\b\w+\b', " ".join(s.get("text", "") for s in segments[:15]).lower()))
+                es_common = {"que", "de", "no", "a", "la", "el", "es", "y", "en", "lo", "un", "por", "me", "una", "te", "los", "se"}
+                is_already_spanish = sub_already_translated or (len(sample_words.intersection(es_common)) >= 3)
+                effective_source = "es" if is_already_spanish else (source_language or "en")
             else:
                 emit("transcription", 0.1, f"Transcribiendo con faster-whisper ({whisper_model})...")
                 transcriber = WhisperTranscriber(model_size=whisper_model)
@@ -99,35 +123,46 @@ class DubbingPipeline:
                     language=source_language,
                     progress_cb=lambda p, m: emit("transcription", p, m)
                 )
+                effective_source = source_language or detected_lang or "ja"
 
             if not segments:
                 raise ValueError("No se encontraron diálogos ni frases para doblar en el video.")
 
-            # Detectar si el texto de los subtítulos ya está en español (Fansubs / subtítulos en español)
-            sample_words = set(re.findall(r'\b\w+\b', " ".join(s.get("text", "") for s in segments[:15]).lower()))
-            es_common = {"que", "de", "no", "a", "la", "el", "es", "y", "en", "lo", "un", "por", "me", "una", "te", "los", "se"}
-            is_already_spanish = sub_already_translated or (len(sample_words.intersection(es_common)) >= 3)
-
-            effective_source = "es" if is_already_spanish else (source_language or detected_lang or "en")
-            emit("transcription", 1.0, f"Diálogos listos ({len(segments)} segmentos). Idioma: {effective_source.upper()}", {"segments": segments, "language": effective_source})
+            emit("transcription", 1.0, f"Diálogos listos ({len(segments)} frases). Idioma: {effective_source.upper()}", {"segments": segments, "language": effective_source})
 
             # 4. Traducción al español (Latino o Castellano)
             dialect_label = "Español Latino" if "latam" in dialect else "Castellano"
             translator = TextTranslator(target_lang="es", dialect=dialect)
 
+            def sanitize_repetitions(txt: str) -> str:
+                # Evitar bucles como "no, no, no, no..."
+                t = re.sub(r'\b(\w+)(?:[,\s]+\1\b){2,}', r'\1', txt, flags=re.IGNORECASE)
+                return t.strip()
+
             if is_already_spanish:
-                emit("translation", 0.5, f"Subtítulos en español detectados. Aplicando localización a {dialect_label} sin errores de IA...")
+                emit("translation", 0.5, f"Subtítulos en español listos. Aplicando localización a {dialect_label}...")
                 for s in segments:
-                    orig_txt = s.get("text", "").strip()
-                    s["translated_text"] = translator.to_latin_american_spanish(orig_txt) if "latam" in dialect else orig_txt
-                emit("translation", 1.0, f"Localización a {dialect_label} aplicada directamente desde subtítulos.", {"segments": segments})
+                    orig_txt = s.get("translated_text") or s.get("text", "")
+                    s["translated_text"] = sanitize_repetitions(translator.to_latin_american_spanish(orig_txt) if "latam" in dialect else orig_txt)
+                emit("translation", 1.0, f"Localización a {dialect_label} completada desde subtítulos.", {"segments": segments})
             else:
                 emit("translation", 0.1, f"Traduciendo frases ({effective_source.upper()} -> {dialect_label})...")
-                segments = translator.translate_segments(
-                    segments,
-                    source_lang=effective_source,
-                    progress_cb=lambda p, m: emit("translation", p, m)
-                )
+                # Filtrar gritos antes de traducir
+                for s in segments:
+                    if re.match(r'^[あいうえおぁぃぅぇぉアイウエオァィゥェォー!！?？\s~〜・]+$', s.get("text", "").strip()):
+                        s["is_scream"] = True
+                        s["translated_text"] = ""
+
+                trans_candidates = [s for s in segments if not s.get("is_scream")]
+                if trans_candidates:
+                    translator.translate_segments(
+                        trans_candidates,
+                        source_lang=effective_source,
+                        progress_cb=lambda p, m: emit("translation", p, m)
+                    )
+                for s in segments:
+                    if s.get("translated_text"):
+                        s["translated_text"] = sanitize_repetitions(s["translated_text"])
                 emit("translation", 1.0, f"Traducción a {dialect_label} completada con éxito.", {"segments": segments})
 
             # 5. Extracción de muestra de voz del interlocutor original para fallback

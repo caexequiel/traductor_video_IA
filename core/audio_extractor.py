@@ -130,5 +130,21 @@ class AudioExtractor:
                             "path": str(f.resolve())
                         })
 
+        # 3. Subtítulos pegados en la imagen del video (Hardcoded OCR)
+        try:
+            from core.ocr_subtitles import VideoSubtitleOCR
+            if VideoSubtitleOCR.detect_hardcoded_subtitles(str(vpath)):
+                subs.insert(0, {
+                    "source": "hardcoded_ocr",
+                    "stream_index": None,
+                    "codec": "ocr",
+                    "language": "es",
+                    "title": "🎯 Subtítulos en pantalla (Detectados por OCR en el video)",
+                    "is_spanish": True,
+                    "path": "hardcoded_ocr"
+                })
+        except Exception as ex:
+            print(f"[Aviso] No se pudo verificar OCR en video: {ex}")
+
         return subs
 

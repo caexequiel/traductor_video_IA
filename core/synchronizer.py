@@ -64,6 +64,16 @@ class AudioSynchronizer:
             orig_end = float(seg["end"])
             target_dur = max(0.2, orig_end - orig_start)
 
+            # Encontrar el inicio del siguiente diálogo para que NUNCA se encimen dos frases
+            next_start = total_duration
+            for j in range(i + 1, len(segments)):
+                if segments[j].get("cloned_audio_path"):
+                    next_start = float(segments[j]["start"])
+                    break
+
+            # Límite estricto de tiempo: la ventana del diálogo o hasta 50ms antes del siguiente diálogo
+            max_allowed_dur = max(0.25, min(target_dur + 0.4, next_start - orig_start - 0.05))
+
             # Duración del audio sintetizado
             cloned_info = sf.info(cloned_path)
             cloned_dur = cloned_info.duration
@@ -71,15 +81,13 @@ class AudioSynchronizer:
             if cloned_dur <= 0:
                 continue
 
-            speed_factor = cloned_dur / target_dur
-
-            # Preservar el tempo y la emotividad natural:
-            # Si el doblaje es más corto que la escena original, NO ralentizar (mantener 1.0x).
-            # Solo acelerar moderadamente (hasta 1.25x) si el texto en español excede la ventana de tiempo.
-            if speed_factor <= 1.0:
-                effective_speed = 1.0
+            # Si el doblaje es más largo que el espacio disponible, acelerar con atempo (hasta 1.45x)
+            # Si cabe de forma natural, mantener tempo original 1.0x
+            speed_factor = cloned_dur / max_allowed_dur
+            if speed_factor > 1.0:
+                effective_speed = min(1.45, speed_factor)
             else:
-                effective_speed = min(1.25, speed_factor)
+                effective_speed = 1.0
 
             stretched_wav = temp_dir / f"sync_{i:04d}.wav"
             if abs(effective_speed - 1.0) > 0.03:
@@ -97,6 +105,15 @@ class AudioSynchronizer:
                 from scipy import signal
                 data = signal.resample(data, num_new_samples)
 
+            # Si después de acelerar todavía supera max_allowed_dur, recortar con desvanecimiento suave
+            max_allowed_samples = int(max_allowed_dur * sample_rate)
+            if len(data) > max_allowed_samples:
+                data = data[:max_allowed_samples]
+                fade_len = min(len(data), int(0.04 * sample_rate))
+                if fade_len > 0:
+                    fade_curve = np.linspace(1.0, 0.0, fade_len)
+                    data[-fade_len:] *= fade_curve
+
             # Insertar en master_buffer en orig_start
             start_idx = int(round(orig_start * sample_rate))
             end_idx = start_idx + len(data)
@@ -104,7 +121,7 @@ class AudioSynchronizer:
             if start_idx < total_samples:
                 actual_end = min(total_samples, end_idx)
                 slice_len = actual_end - start_idx
-                # Sumar con mezcla suave (suavizado de bordes)
+                # Insertar limpiamente en la pista maestra
                 master_buffer[start_idx:actual_end] += data[:slice_len]
 
             if progress_cb:
