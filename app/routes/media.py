@@ -69,3 +69,19 @@ def stream_media(path: str, request: Request):
         media_type=content_type,
         headers={"Content-Length": str(file_size), "Accept-Ranges": "bytes"}
     )
+
+@router.get("/subtitles")
+def inspect_subtitles(path: str):
+    """Detecta subtítulos embebidos en el contenedor y archivos de subtítulos en el directorio del video."""
+    from core.audio_extractor import AudioExtractor
+    file_path = Path(path).resolve()
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Archivo de video no encontrado.")
+
+    subs = AudioExtractor.find_available_subtitles(str(file_path))
+    return {
+        "video_path": str(file_path),
+        "has_subtitles": len(subs) > 0,
+        "subtitles": subs
+    }
+

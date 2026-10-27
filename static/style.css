@@ -662,3 +662,23 @@ body {
   padding: 16px 24px;
   border-top: 1px solid var(--border-color);
 }
+
+/* Detected Subtitles Styling */
+.detected-subs-box {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.detected-badge {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-block;
+}
+

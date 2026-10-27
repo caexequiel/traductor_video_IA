@@ -14,7 +14,9 @@ router = APIRouter(prefix="/api", tags=["process"])
 class ProcessRequest(BaseModel):
     video_path: str
     subtitle_path: Optional[str] = None
-    whisper_model: str = "medium"
+    embedded_sub_index: Optional[int] = None
+    sub_already_translated: bool = False
+    whisper_model: str = "large-v3"
     preserve_bg: bool = True
     source_language: Optional[str] = None
     dialect: str = "es-latam"
@@ -83,7 +85,9 @@ def run_pipeline_thread(req_dict: Dict[str, Any], job_id: str):
         result = pipeline.run(
             video_path=req_dict["video_path"],
             subtitle_path=req_dict.get("subtitle_path"),
-            whisper_model=req_dict.get("whisper_model", "medium"),
+            embedded_sub_index=req_dict.get("embedded_sub_index"),
+            sub_already_translated=req_dict.get("sub_already_translated", False),
+            whisper_model=req_dict.get("whisper_model", "large-v3"),
             preserve_bg=req_dict.get("preserve_bg", True),
             source_language=req_dict.get("source_language"),
             dialect=req_dict.get("dialect", "es-latam"),

@@ -62,20 +62,42 @@
         <div class="config-group">
           <label class="label-heading">Fuente de Diálogos:</label>
           <div class="radio-group">
+            <label class="radio-label" id="labelRadioDetected" style="display: none;">
+              <input type="radio" name="subMode" value="detected" id="radioDetected">
+              🎯 Usar Subtítulo Detectado del Video
+            </label>
             <label class="radio-label">
               <input type="radio" name="subMode" value="whisper" checked id="radioWhisper">
-              Auto-transcribir con IA (Faster-Whisper)
+              🎙️ Auto-transcribir con IA (Faster-Whisper)
             </label>
             <label class="radio-label">
               <input type="radio" name="subMode" value="file" id="radioFile">
-              Cargar archivo de subtítulos (.srt / .vtt)
+              📁 Seleccionar archivo manual (.srt / .ass / .vtt)
             </label>
+          </div>
+
+          <!-- Detected Subtitles Box -->
+          <div id="detectedSubsBox" class="detected-subs-box hidden">
+            <div class="detected-subs-header">
+              <span class="detected-badge">🎯 Subtítulos Encontrados</span>
+            </div>
+            <select id="detectedSubSelect" class="form-select mt-2">
+              <!-- Cargado dinámicamente -->
+            </select>
+            <div class="mt-2">
+              <label class="toggle-container">
+                <input type="checkbox" id="checkSubAlreadyTranslated" checked>
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">El subtítulo ya está en español (Usar traducción directa sin IA)</span>
+              </label>
+              <p class="help-text">Preserva la traducción humana profesional del fansub (nombres de personajes, expresiones y emotividad intactos).</p>
+            </div>
           </div>
 
           <div id="subFileSection" class="sub-file-box hidden">
             <div id="selectedSubInfo" class="selected-sub-text">Sin subtítulo seleccionado</div>
             <button class="btn btn-secondary btn-sm" id="btnSelectSub">
-              📄 Explorar Subtítulo
+              📄 Explorar Archivo (.srt / .ass / .vtt)
             </button>
           </div>
         </div>
@@ -104,9 +126,9 @@
         <div class="config-group mt-3">
           <label class="label-heading">Modelo Faster-Whisper:</label>
           <select id="whisperModelSelect" class="form-select">
+            <option value="large-v3" selected>Large-v3 (Recomendado - Máxima precisión y emotividad en RTX 3050)</option>
+            <option value="medium">Medium (Equilibrado)</option>
             <option value="small">Small (Rápido, menor VRAM)</option>
-            <option value="medium" selected>Medium (Recomendado - Óptimo para RTX 3050)</option>
-            <option value="large-v3">Large-v3 (Máxima precisión)</option>
           </select>
         </div>
 
@@ -189,13 +211,14 @@
                 <tr>
                   <th>#</th>
                   <th>Tiempo</th>
+                  <th>Voz / Personaje</th>
                   <th>Original</th>
-                  <th>Castellano (Doblaje)</th>
+                  <th>Doblaje Latino</th>
                 </tr>
               </thead>
               <tbody id="segmentsTbody">
                 <tr>
-                  <td colspan="4" class="text-center text-muted">Aún no se han procesado diálogos.</td>
+                  <td colspan="5" class="text-center text-muted">Aún no se han procesado diálogos.</td>
                 </tr>
               </tbody>
             </table>

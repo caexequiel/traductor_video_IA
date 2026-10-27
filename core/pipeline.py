@@ -27,14 +27,16 @@ class DubbingPipeline:
         self,
         video_path: str,
         subtitle_path: Optional[str] = None,
-        whisper_model: str = "medium",
+        embedded_sub_index: Optional[int] = None,
+        sub_already_translated: bool = False,
+        whisper_model: str = "large-v3",
         preserve_bg: bool = True,
         source_language: Optional[str] = None,
         dialect: str = "es-latam",
         progress_cb: Optional[Callable[[str, float, str, Dict[str, Any]], None]] = None
     ) -> Dict[str, Any]:
         """
-        Ejecuta el pipeline completo.
+        Ejecuta el pipeline completo de doblaje inteligente.
         progress_cb(stage, percentage, message, extra_data)
         """
         run_id = f"job_{int(time.time())}_{uuid.uuid4().hex[:6]}"
@@ -72,8 +74,20 @@ class DubbingPipeline:
             emit("transcription", 0.05, "Obteniendo marcas de tiempo y diálogos...")
             segments = []
             detected_lang = source_language
+
+            # Si se especificó una pista embebida, extraerla primero
+            if embedded_sub_index is not None:
+                emit("transcription", 0.1, f"Extrayendo pista de subtítulos incrustada #{embedded_sub_index}...")
+                extracted_sub = str(job_dir / "embedded_sub.srt")
+                try:
+                    AudioExtractor.extract_embedded_subtitle(video_path, embedded_sub_index, extracted_sub)
+                    if Path(extracted_sub).exists():
+                        subtitle_path = extracted_sub
+                except Exception as ex:
+                    print(f"[Aviso] No se pudo extraer pista embebida #{embedded_sub_index}: {ex}")
+
             if subtitle_path and Path(subtitle_path).exists():
-                emit("transcription", 0.5, f"Leyendo subtítulos proporcionados: {Path(subtitle_path).name}...")
+                emit("transcription", 0.5, f"Leyendo subtítulos: {Path(subtitle_path).name}...")
                 segments = SubtitleParser.parse_file(subtitle_path)
                 emit("transcription", 1.0, f"{len(segments)} frases cargadas desde subtítulos.")
             else:
@@ -88,35 +102,49 @@ class DubbingPipeline:
             if not segments:
                 raise ValueError("No se encontraron diálogos ni frases para doblar en el video.")
 
-            effective_source = source_language or detected_lang or "en"
-            emit("transcription", 1.0, f"Transcripción lista ({len(segments)} segmentos). Idioma detectado: {effective_source.upper()}", {"segments": segments, "language": effective_source})
+            # Detectar si el texto de los subtítulos ya está en español (Fansubs / subtítulos en español)
+            sample_words = set(re.findall(r'\b\w+\b', " ".join(s.get("text", "") for s in segments[:15]).lower()))
+            es_common = {"que", "de", "no", "a", "la", "el", "es", "y", "en", "lo", "un", "por", "me", "una", "te", "los", "se"}
+            is_already_spanish = sub_already_translated or (len(sample_words.intersection(es_common)) >= 3)
+
+            effective_source = "es" if is_already_spanish else (source_language or detected_lang or "en")
+            emit("transcription", 1.0, f"Diálogos listos ({len(segments)} segmentos). Idioma: {effective_source.upper()}", {"segments": segments, "language": effective_source})
 
             # 4. Traducción al español (Latino o Castellano)
             dialect_label = "Español Latino" if "latam" in dialect else "Castellano"
-            emit("translation", 0.1, f"Traduciendo frases ({effective_source.upper()} -> {dialect_label})...")
             translator = TextTranslator(target_lang="es", dialect=dialect)
-            segments = translator.translate_segments(
-                segments,
-                source_lang=effective_source,
-                progress_cb=lambda p, m: emit("translation", p, m)
-            )
-            emit("translation", 1.0, f"Traducción a {dialect_label} completada con éxito.", {"segments": segments})
 
-            # 5. Extracción de muestra de voz del interlocutor original
+            if is_already_spanish:
+                emit("translation", 0.5, f"Subtítulos en español detectados. Aplicando localización a {dialect_label} sin errores de IA...")
+                for s in segments:
+                    orig_txt = s.get("text", "").strip()
+                    s["translated_text"] = translator.to_latin_american_spanish(orig_txt) if "latam" in dialect else orig_txt
+                emit("translation", 1.0, f"Localización a {dialect_label} aplicada directamente desde subtítulos.", {"segments": segments})
+            else:
+                emit("translation", 0.1, f"Traduciendo frases ({effective_source.upper()} -> {dialect_label})...")
+                segments = translator.translate_segments(
+                    segments,
+                    source_lang=effective_source,
+                    progress_cb=lambda p, m: emit("translation", p, m)
+                )
+                emit("translation", 1.0, f"Traducción a {dialect_label} completada con éxito.", {"segments": segments})
+
+            # 5. Extracción de muestra de voz del interlocutor original para fallback
             emit("voice_cloning", 0.05, "Extrayendo muestra del timbre de voz original...")
             speaker_sample = str(job_dir / "speaker_sample.wav")
             cloner = VoiceCloner(output_dir=str(job_dir / "cloned_audio"))
             cloner.extract_voice_sample(vocals_wav, segments, speaker_sample)
 
-            # 6. Clonación de voz (XTTS-v2)
-            emit("voice_cloning", 0.1, "Sintetizando voz en castellano con clonación...")
+            # 6. Clonación de voz emotiva y dinámica por escena (XTTS-v2)
+            emit("voice_cloning", 0.1, "Sintetizando voces con entonación emotiva y timbre por escena...")
             segments = cloner.clone_segments(
                 segments,
                 speaker_wav_path=speaker_sample,
+                vocals_wav_path=vocals_wav,
                 target_language="es",
                 progress_cb=lambda p, m: emit("voice_cloning", p, m)
             )
-            emit("voice_cloning", 1.0, "Clonación de voces finalizada.")
+            emit("voice_cloning", 1.0, "Clonación emotiva de voces finalizada.")
 
             # 7. Sincronización temporal con preservación de tono
             emit("synchronization", 0.1, "Sincronizando tiempos y pausas con el video original...")

@@ -40,17 +40,79 @@ class SubtitleParser:
         return segments
 
     @classmethod
+    def parse_ass_ssa(cls, file_path: str) -> List[Dict[str, Any]]:
+        """Parsea archivos .ass / .ssa (Advanced SubStation Alpha) comúnmente usados en fansubs de anime."""
+        segments = []
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+
+        format_keys = []
+        in_events = False
+
+        def parse_ass_time(ts: str) -> float:
+            m = re.match(r"(\d+):(\d{2}):(\d{2})[.,](\d{2,3})", ts.strip())
+            if m:
+                h, mm, ss, ms = m.groups()
+                factor = 10 if len(ms) == 2 else 1
+                return cls._time_to_seconds(int(h), int(mm), int(ss), int(ms) * factor)
+            return 0.0
+
+        for line in lines:
+            line_str = line.strip()
+            if line_str.lower() == "[events]":
+                in_events = True
+                continue
+            if line_str.startswith("[") and line_str.endswith("]"):
+                in_events = False
+                continue
+
+            if in_events:
+                if line_str.lower().startswith("format:"):
+                    raw_fmt = line_str.split(":", 1)[1]
+                    format_keys = [k.strip().lower() for k in raw_fmt.split(",")]
+                elif line_str.lower().startswith("dialogue:"):
+                    parts = line_str.split(":", 1)[1].split(",", len(format_keys) - 1)
+                    if len(parts) >= len(format_keys):
+                        row = {format_keys[i]: parts[i].strip() for i in range(len(format_keys))}
+                    else:
+                        continue
+
+                    start_sec = parse_ass_time(row.get("start", "0:00:00.00"))
+                    end_sec = parse_ass_time(row.get("end", "0:00:00.00"))
+                    speaker = row.get("name", "") or row.get("actor", "")
+                    raw_text = row.get("text", "")
+
+                    # Limpiar tags de estilo ASS ({\pos...}, \N, etc.)
+                    clean_text = re.sub(r"\{[^\}]+\}", "", raw_text)
+                    clean_text = clean_text.replace(r"\N", " ").replace(r"\n", " ").replace(r"\h", " ")
+                    clean_text = re.sub(r"<[^>]+>", "", clean_text)
+                    clean_text = " ".join(clean_text.split()).strip()
+
+                    if clean_text and end_sec > start_sec:
+                        segments.append({
+                            "id": len(segments),
+                            "start": round(start_sec, 3),
+                            "end": round(end_sec, 3),
+                            "text": clean_text,
+                            "speaker": speaker if speaker else None
+                        })
+
+        return segments
+
+    @classmethod
     def parse_file(cls, filepath: str) -> List[Dict[str, Any]]:
         ext = Path(filepath).suffix.lower()
         if ext in [".srt", ".vtt"]:
             return cls.parse_srt(filepath)
+        elif ext in [".ass", ".ssa"]:
+            return cls.parse_ass_ssa(filepath)
         raise ValueError(f"Formato de subtítulo no soportado: {ext}")
 
 
 class WhisperTranscriber:
     """Transcriptor automático con faster-whisper optimizado para GPU."""
 
-    def __init__(self, model_size: str = "medium", device: str = "cuda", compute_type: str = "float16"):
+    def __init__(self, model_size: str = "large-v3", device: str = "cuda", compute_type: str = "float16"):
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
@@ -77,14 +139,14 @@ class WhisperTranscriber:
         )
 
         if progress_cb:
-            progress_cb(0.3, "Transcribiendo y detectando marcas de tiempo...")
+            progress_cb(0.3, "Transcribiendo y detectando marcas de tiempo con alta sensibilidad...")
 
         segments_generator, info = model.transcribe(
             audio_path,
             language=language,
             beam_size=5,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=400)
+            vad_parameters=dict(min_silence_duration_ms=250, speech_pad_ms=250, threshold=0.3)
         )
 
         results = []

@@ -2,7 +2,8 @@
 const state = {
   selectedVideoPath: null,
   selectedSubPath: null,
-  subMode: 'whisper', // 'whisper' | 'file'
+  subMode: 'whisper', // 'detected' | 'whisper' | 'file'
+  detectedSubs: [],
   currentExplorerTarget: 'video', // 'video' | 'subtitle'
   currentBrowsePath: null,
   activeJobId: null,
@@ -18,8 +19,13 @@ const dom = {
   btnOpenWebExplorer: document.getElementById('btnOpenWebExplorer'),
   videoPreviewCard: document.getElementById('videoPreviewCard'),
   origVideoPlayer: document.getElementById('origVideoPlayer'),
+  labelRadioDetected: document.getElementById('labelRadioDetected'),
+  radioDetected: document.getElementById('radioDetected'),
   radioWhisper: document.getElementById('radioWhisper'),
   radioFile: document.getElementById('radioFile'),
+  detectedSubsBox: document.getElementById('detectedSubsBox'),
+  detectedSubSelect: document.getElementById('detectedSubSelect'),
+  checkSubAlreadyTranslated: document.getElementById('checkSubAlreadyTranslated'),
   subFileSection: document.getElementById('subFileSection'),
   selectedSubInfo: document.getElementById('selectedSubInfo'),
   btnSelectSub: document.getElementById('btnSelectSub'),
@@ -66,15 +72,35 @@ function initEvents() {
   dom.btnCloseModal.addEventListener('click', closeExplorer);
   dom.btnCancelExplorer.addEventListener('click', closeExplorer);
 
+  if (dom.radioDetected) {
+    dom.radioDetected.addEventListener('change', () => {
+      state.subMode = 'detected';
+      if (dom.detectedSubsBox) dom.detectedSubsBox.classList.remove('hidden');
+      dom.subFileSection.classList.add('hidden');
+    });
+  }
+
   dom.radioWhisper.addEventListener('change', () => {
     state.subMode = 'whisper';
+    if (dom.detectedSubsBox) dom.detectedSubsBox.classList.add('hidden');
     dom.subFileSection.classList.add('hidden');
   });
 
   dom.radioFile.addEventListener('change', () => {
     state.subMode = 'file';
+    if (dom.detectedSubsBox) dom.detectedSubsBox.classList.add('hidden');
     dom.subFileSection.classList.remove('hidden');
   });
+
+  if (dom.detectedSubSelect) {
+    dom.detectedSubSelect.addEventListener('change', () => {
+      const idx = parseInt(dom.detectedSubSelect.value);
+      const sub = state.detectedSubs[idx];
+      if (sub && dom.checkSubAlreadyTranslated) {
+        dom.checkSubAlreadyTranslated.checked = !!sub.is_spanish;
+      }
+    });
+  }
 
   dom.btnGoParent.addEventListener('click', () => {
     if (state.parentBrowsePath) {
@@ -291,11 +317,59 @@ async function onFileSelected(entry) {
     dom.origVideoPlayer.src = `/api/media/stream?path=${encodeURIComponent(entry.path)}`;
     dom.videoPreviewCard.classList.remove('hidden');
 
+    // Buscar automáticamente subtítulos embebidos o en la carpeta
+    checkVideoSubtitles(entry.path);
+
     dom.btnStartDubbing.disabled = false;
   } else if (state.currentExplorerTarget === 'subtitle') {
     state.selectedSubPath = entry.path;
     dom.selectedSubInfo.innerText = entry.name;
   }
+}
+
+// Detección automática de subtítulos
+async function checkVideoSubtitles(videoPath) {
+  try {
+    const res = await fetch(`/api/media/subtitles?path=${encodeURIComponent(videoPath)}`);
+    if (res.ok) {
+      const data = await res.json();
+      state.detectedSubs = data.subtitles || [];
+      if (state.detectedSubs.length > 0) {
+        dom.detectedSubSelect.innerHTML = '';
+        state.detectedSubs.forEach((sub, i) => {
+          const opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = `${sub.is_spanish ? '🇪🇸 ' : '🌐 '}${sub.title}`;
+          dom.detectedSubSelect.appendChild(opt);
+        });
+
+        if (dom.labelRadioDetected) dom.labelRadioDetected.style.display = 'flex';
+        dom.radioDetected.checked = true;
+        state.subMode = 'detected';
+        dom.detectedSubsBox.classList.remove('hidden');
+        dom.subFileSection.classList.add('hidden');
+
+        // Si hay subtítulo en español, activarlo por defecto
+        const firstSpanishIdx = state.detectedSubs.findIndex(s => s.is_spanish);
+        if (firstSpanishIdx !== -1) {
+          dom.detectedSubSelect.value = firstSpanishIdx;
+          dom.checkSubAlreadyTranslated.checked = true;
+        } else {
+          dom.checkSubAlreadyTranslated.checked = false;
+        }
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("No se pudieron detectar subtítulos automáticamente:", e);
+  }
+
+  // Si no se encontraron subtítulos
+  if (dom.labelRadioDetected) dom.labelRadioDetected.style.display = 'none';
+  dom.radioWhisper.checked = true;
+  state.subMode = 'whisper';
+  if (dom.detectedSubsBox) dom.detectedSubsBox.classList.add('hidden');
+  dom.subFileSection.classList.add('hidden');
 }
 
 // Iniciar Doblaje
@@ -311,9 +385,31 @@ async function startDubbingProcess() {
     : null;
   const dialect = dom.dialectSelect ? dom.dialectSelect.value : 'es-latam';
 
+  let subtitlePath = null;
+  let embeddedSubIndex = null;
+  let subAlreadyTranslated = false;
+
+  if (state.subMode === 'detected' && state.detectedSubs.length > 0) {
+    const idx = parseInt(dom.detectedSubSelect.value);
+    const sub = state.detectedSubs[idx];
+    if (sub) {
+      if (sub.source === 'embedded') {
+        embeddedSubIndex = sub.stream_index;
+      } else {
+        subtitlePath = sub.path;
+      }
+      subAlreadyTranslated = dom.checkSubAlreadyTranslated ? dom.checkSubAlreadyTranslated.checked : false;
+    }
+  } else if (state.subMode === 'file') {
+    subtitlePath = state.selectedSubPath;
+    subAlreadyTranslated = dom.checkSubAlreadyTranslated ? dom.checkSubAlreadyTranslated.checked : false;
+  }
+
   const payload = {
     video_path: state.selectedVideoPath,
-    subtitle_path: state.subMode === 'file' ? state.selectedSubPath : null,
+    subtitle_path: subtitlePath,
+    embedded_sub_index: embeddedSubIndex,
+    sub_already_translated: subAlreadyTranslated,
     source_language: sourceLang,
     dialect: dialect,
     whisper_model: dom.whisperModelSelect.value,
@@ -424,10 +520,12 @@ function renderSegmentsTable(segments) {
     const end = seg.end !== undefined ? `${seg.end.toFixed(1)}s` : '-';
     const original = seg.text || '-';
     const trans = seg.translated_text || '<span class="text-muted">Traduciendo...</span>';
+    const speaker = seg.speaker ? `<span class="badge" style="color: #38bdf8; border-color: #38bdf8;">🎙️ ${escapeHtml(seg.speaker)}</span>` : '<span class="text-muted">🎙️ Escena</span>';
 
     tr.innerHTML = `
       <td>${idx + 1}</td>
       <td><code>${start} - ${end}</code></td>
+      <td>${speaker}</td>
       <td>${escapeHtml(original)}</td>
       <td><strong style="color: var(--primary);">${escapeHtml(trans)}</strong></td>
     `;

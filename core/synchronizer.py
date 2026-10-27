@@ -73,8 +73,13 @@ class AudioSynchronizer:
 
             speed_factor = cloned_dur / target_dur
 
-            # Limitar la aceleración a un rango comprensible y natural (0.85x a 1.35x)
-            effective_speed = max(0.85, min(1.35, speed_factor))
+            # Preservar el tempo y la emotividad natural:
+            # Si el doblaje es más corto que la escena original, NO ralentizar (mantener 1.0x).
+            # Solo acelerar moderadamente (hasta 1.25x) si el texto en español excede la ventana de tiempo.
+            if speed_factor <= 1.0:
+                effective_speed = 1.0
+            else:
+                effective_speed = min(1.25, speed_factor)
 
             stretched_wav = temp_dir / f"sync_{i:04d}.wav"
             if abs(effective_speed - 1.0) > 0.03:
